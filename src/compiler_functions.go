@@ -258,6 +258,30 @@ func (c *Compiler) playSnd(is IniSection, sc *StateControllerBase, _ int8) (Stat
 			playSnd_priority, VT_Int, 1, false); err != nil {
 			return err
 		}
+		if err := c.paramValue(is, sc, "loopstart",
+			playSnd_loopstart, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "loopend",
+			playSnd_loopend, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "startposition",
+			playSnd_startposition, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "loopcount",
+			playSnd_loopcount, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "stopongethit",
+			playSnd_stopongethit, VT_Bool, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "stoponchangestate",
+			playSnd_stoponchangestate, VT_Bool, 1, false); err != nil {
+			return err
+		}
 		return nil
 	})
 	return *ret, err
@@ -281,6 +305,10 @@ func (c *Compiler) changeStateSub(is IniSection,
 		return c.scAdd(sc, changeState_anim, data, VT_Int, 1,
 			sc.beToExp(BytecodeExp(prefix))...)
 	}); err != nil {
+		return err
+	}
+	if err := c.paramValue(is, sc, "continue",
+		changeState_continue, VT_Bool, 1, false); err != nil {
 		return err
 	}
 	if err := c.paramValue(is, sc, "readplayerid",
@@ -429,10 +457,13 @@ func (c *Compiler) helper(is IniSection, sc *StateControllerBase, _ int8) (State
 			if len(data) == 0 {
 				return Error("Value not specified")
 			}
-			switch strings.ToLower(data)[0] {
-			case 'n':
-			case 'p':
+			switch strings.ToLower(data) {
+			case "normal":
+				// Default, valid value
+			case "player":
 				sc.add(helper_helpertype, sc.iToExp(1))
+			case "projectile":
+				// Valid but unused in Mugen. Same as normal type
 			default:
 				return Error("Invalid value: " + data)
 			}
@@ -4283,6 +4314,102 @@ func (c *Compiler) modifyBGCtrl(is IniSection, sc *StateControllerBase, _ int8) 
 	})
 	return *ret, err
 }
+func (c *Compiler) modifySnd(is IniSection, sc *StateControllerBase, _ int8) (StateController, error) {
+	ret, err := (*modifySnd)(sc), c.stateSec(is, func() error {
+		if err := c.paramValue(is, sc, "redirectid",
+			modifySnd_redirectid, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "channel",
+			modifySnd_channel, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "pan",
+			modifySnd_pan, VT_Float, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "abspan",
+			modifySnd_abspan, VT_Float, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "volume",
+			modifySnd_volume, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "volumescale",
+			modifySnd_volumescale, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "freqmul",
+			modifySnd_freqmul, VT_Float, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "priority",
+			modifySnd_priority, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "loopstart",
+			modifySnd_loopstart, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "loopend",
+			modifySnd_loopend, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "position",
+			modifySnd_position, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "loop",
+			modifySnd_loop, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "loopcount",
+			modifySnd_loopcount, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "stopongethit",
+			modifySnd_stopongethit, VT_Bool, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "stoponchangestate",
+			modifySnd_stoponchangestate, VT_Bool, 1, false); err != nil {
+			return err
+		}
+		return nil
+	})
+	return *ret, err
+}
+func (c *Compiler) modifyBgm(is IniSection, sc *StateControllerBase, _ int8) (StateController, error) {
+	ret, err := (*modifyBgm)(sc), c.stateSec(is, func() error {
+		if err := c.paramValue(is, sc, "redirectid",
+			modifyBgm_redirectid, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "volume",
+			modifyBgm_volume, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "loopstart",
+			modifyBgm_loopstart, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "loopend",
+			modifyBgm_loopend, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "freqmul",
+			modifyBgm_freqmul, VT_Float, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "position",
+			modifyBgm_position, VT_Int, 1, false); err != nil {
+			return err
+		}
+		return nil
+	})
+	return *ret, err
+}
 func (c *Compiler) printToConsole(is IniSection, sc *StateControllerBase, _ int8) (StateController, error) {
 	ret, err := (*printToConsole)(sc), c.stateSec(is, func() error {
 		return c.displayToClipboardSub(is, sc)
@@ -4652,8 +4779,8 @@ func (c *Compiler) modifyStageVar(is IniSection, sc *StateControllerBase, _ int8
 			modifyStageVar_redirectid, VT_Int, 1, false); err != nil {
 			return err
 		}
-		if err := c.paramValue(is, sc, "camera.ytension.enable",
-			modifyStageVar_camera_ytension_enable, VT_Bool, 1, false); err != nil {
+		if err := c.paramValue(is, sc, "camera.autocenter",
+			modifyStageVar_camera_autocenter, VT_Bool, 1, false); err != nil {
 			return err
 		}
 		if err := c.paramValue(is, sc, "camera.boundleft",
@@ -4692,6 +4819,18 @@ func (c *Compiler) modifyStageVar(is IniSection, sc *StateControllerBase, _ int8
 			modifyStageVar_camera_tension, VT_Int, 1, false); err != nil {
 			return err
 		}
+		if err := c.paramValue(is, sc, "camera.tensionvel",
+			modifyStageVar_camera_tensionvel, VT_Float, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "camera.cuthigh",
+			modifyStageVar_camera_cuthigh, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "camera.cutlow",
+			modifyStageVar_camera_cutlow, VT_Int, 1, false); err != nil {
+			return err
+		}
 		if err := c.paramValue(is, sc, "camera.startzoom",
 			modifyStageVar_camera_startzoom, VT_Float, 1, false); err != nil {
 			return err
@@ -4702,6 +4841,18 @@ func (c *Compiler) modifyStageVar(is IniSection, sc *StateControllerBase, _ int8
 		}
 		if err := c.paramValue(is, sc, "camera.zoomin",
 			modifyStageVar_camera_zoomin, VT_Float, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "camera.zoomindelay",
+			modifyStageVar_camera_zoomindelay, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "camera.ytension.enable",
+			modifyStageVar_camera_ytension_enable, VT_Bool, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "camera.autocenter",
+			modifyStageVar_camera_autocenter, VT_Bool, 1, false); err != nil {
 			return err
 		}
 		if err := c.paramValue(is, sc, "playerinfo.leftbound",
@@ -4883,6 +5034,148 @@ func (c *Compiler) assertCommand(is IniSection, sc *StateControllerBase, _ int8)
 		}
 		if err := c.paramValue(is, sc, "buffertime",
 			assertCommand_buffertime, VT_Int, 1, false); err != nil {
+			return err
+		}
+		return nil
+	})
+	return *ret, err
+}
+
+func (c *Compiler) getHitVarSet(is IniSection, sc *StateControllerBase, _ int8) (StateController, error) {
+	ret, err := (*getHitVarSet)(sc), c.stateSec(is, func() error {
+		if err := c.paramValue(is, sc, "redirectid",
+			getHitVarSet_redirectid, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "airtype",
+			getHitVarSet_airtype, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "animtype",
+			getHitVarSet_animtype, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "attr",
+			getHitVarSet_attr, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "chainid",
+			getHitVarSet_chainid, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "ctrltime",
+			getHitVarSet_ctrltime, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "fall",
+			getHitVarSet_fall, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "fall.damage",
+			getHitVarSet_fall_damage, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "fall.envshake.ampl",
+			getHitVarSet_fall_envshake_ampl, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "fall.envshake.freq",
+			getHitVarSet_fall_envshake_freq, VT_Float, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "fall.envshake.mul",
+			getHitVarSet_fall_envshake_mul, VT_Float, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "fall.envshake.phase",
+			getHitVarSet_fall_envshake_phase, VT_Float, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "fall.envshake.time",
+			getHitVarSet_fall_envshake_time, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "fall.kill",
+			getHitVarSet_fall_kill, VT_Bool, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "fall.recover",
+			getHitVarSet_fall_recover, VT_Bool, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "fall.recovertime",
+			getHitVarSet_fall_recovertime, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "fall.xvel",
+			getHitVarSet_fall_xvel, VT_Float, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "fall.yvel",
+			getHitVarSet_fall_yvel, VT_Float, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "fallcount",
+			getHitVarSet_fallcount, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "groundtype",
+			getHitVarSet_groundtype, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "guarded",
+			getHitVarSet_guarded, VT_Bool, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "hitshaketime",
+			getHitVarSet_hitshaketime, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "hittime",
+			getHitVarSet_hittime, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "id",
+			getHitVarSet_id, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "playerno",
+			getHitVarSet_playerno, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "recovertime",
+			getHitVarSet_recovertime, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "slidetime",
+			getHitVarSet_slidetime, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "xvel",
+			getHitVarSet_xvel, VT_Float, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "yaccel",
+			getHitVarSet_yaccel, VT_Float, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "yvel",
+			getHitVarSet_yvel, VT_Float, 1, false); err != nil {
+			return err
+		}
+		return nil
+	})
+	return *ret, err
+}
+
+func (c *Compiler) groundLevelOffset(is IniSection, sc *StateControllerBase, _ int8) (StateController, error) {
+	ret, err := (*groundLevelOffset)(sc), c.stateSec(is, func() error {
+		if err := c.paramValue(is, sc, "redirectid",
+			groundLevelOffset_redirectid, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "value",
+			groundLevelOffset_value, VT_Float, 1, false); err != nil {
 			return err
 		}
 		return nil

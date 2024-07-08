@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"math"
 	"os"
 	"path/filepath"
@@ -205,6 +204,18 @@ func Atof(str string) float64 {
 	}
 	return f
 }
+
+// Prevent overflow errors when converting float64 to int32
+func F64toI32(f float64) int32 {
+	if f >= float64(math.MaxInt32) {
+		return math.MaxInt32
+	}
+	if f <= float64(math.MinInt32) {
+		return math.MinInt32
+	}
+	return int32(f)
+}
+
 func readDigit(d string) (int32, bool) {
 	if len(d) == 0 || (len(d) >= 2 && d[0] == '0') {
 		return 0, false
@@ -241,7 +252,7 @@ func I32ToU16(i32 int32) uint16 {
 	return uint16(i32)
 }
 func LoadText(filename string) (string, error) {
-	bytes, err := ioutil.ReadFile(filename)
+	bytes, err := os.ReadFile(filename)
 	if err != nil {
 		return "", err
 	}

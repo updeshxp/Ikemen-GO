@@ -124,7 +124,11 @@ func loadFntV1(filename string) (*Fnt, error) {
 		if err := read(rgb[:]); err != nil {
 			return nil, err
 		}
-		spr.Pal[i] = uint32(rgb[2])<<16 | uint32(rgb[1])<<8 | uint32(rgb[0])
+		var alpha byte = 255
+		if i == 0 {
+			alpha = 0
+		}
+		spr.Pal[i] = uint32(alpha)<<24 | uint32(rgb[2])<<16 | uint32(rgb[1])<<8 | uint32(rgb[0])
 	}
 
 	px = spr.RlePcxDecode(px)
@@ -444,7 +448,7 @@ func (f *Fnt) drawChar(
 	if len(f.palettes) != 0 && len(f.coldepth) > int(bank) &&
 		f.images[bt][c].img[0].coldepth != 32 &&
 		f.coldepth[bank] != f.images[bt][c].img[0].coldepth {
-		pal = palfx.getFxPal(f.images[bt][c].img[0].Pal[:], false)
+		pal = f.images[bt][c].img[0].Pal[:] //palfx.getFxPal(f.images[bt][c].img[0].Pal[:], false)
 	}
 
 	x -= xscl * float32(spr.Offset[0])
@@ -456,10 +460,10 @@ func (f *Fnt) drawChar(
 		spr.Tex, f.paltex, spr.Size,
 		-x * sys.widthScale, -y * sys.heightScale, notiling,
 		xscl * sys.widthScale, xscl * sys.widthScale,
-		yscl * sys.heightScale, 1, 0,
+		yscl * sys.heightScale, 1, 0, 1, 1,
 		Rotation{},
 		0, sys.brightness*255>>8 | 1<<9, 0,
-		nil, window, 0, 0,
+		palfx, window, 0, 0,
 		0, 0, -xscl * float32(spr.Offset[0]), -yscl * float32(spr.Offset[1]),
 	}
 	RenderSprite(rp)
@@ -512,7 +516,7 @@ func (f *Fnt) DrawText(txt string, x, y, xscl, yscl float32, bank, align int32,
 
 	var pal []uint32
 	if len(f.palettes) != 0 {
-		pal = palfx.getFxPal(f.palettes[bank][:], false)
+		pal = f.palettes[bank][:] //palfx.getFxPal(f.palettes[bank][:], false)
 	}
 
 	f.paltex = nil

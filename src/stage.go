@@ -129,7 +129,6 @@ type backGround struct {
 	id                 int32
 	start              [2]float32
 	xofs               float32
-	camstartx          float32
 	delta              [2]float32
 	width              [2]int32
 	xscale             [2]float32
@@ -164,9 +163,8 @@ func newBackGround(sff *Sff) *backGround {
 		startrect: [...]int32{-32768, -32768, 65535, 65535}}
 }
 func readBackGround(is IniSection, link *backGround,
-	sff *Sff, at AnimationTable, camstartx float32, sProps StageProps) *backGround {
+	sff *Sff, at AnimationTable, sProps StageProps) *backGround {
 	bg := newBackGround(sff)
-	bg.camstartx = camstartx
 	typ := is["type"]
 	if len(typ) == 0 {
 		return bg
@@ -407,27 +405,35 @@ func (bg backGround) draw(pos [2]float32, scl, bgscl, lclscl float32,
 	if bg.zoomscaledelta[1] != math.MaxFloat32 {
 		ys3 = ((scl + (1-scl)*(1-bg.zoomscaledelta[1])) / scly)
 	}
-	scly *= lclscl
-	sclx *= lscl[0]
 	// This handles the flooring of the camera position in MUGEN versions earlier than 1.0.
+	var x, yScrollPos float32
 	if bg.roundpos {
+		x = bg.start[0] + bg.xofs - float32(Floor(pos[0]/stgscl[0]))*bg.delta[0] + bg.bga.offset[0]
+		yScrollPos = float32(Floor(pos[1]/scl/stgscl[1])) * bg.delta[1]
 		for i := 0; i < 2; i++ {
 			pos[i] = float32(math.Floor(float64(pos[i])))
 		}
+	} else {
+		x = bg.start[0] + bg.xofs - pos[0]/stgscl[0]*bg.delta[0] + bg.bga.offset[0]
+		// Hires breaks ydelta scrolling vel, so bgscl was commented from here.
+		yScrollPos = (pos[1] / scl / stgscl[1]) * bg.delta[1] // * bgscl
 	}
-	x := bg.start[0] + bg.xofs - (pos[0]/stgscl[0]+bg.camstartx)*bg.delta[0] +
-		bg.bga.offset[0]
-	zoomybound := sys.cam.CameraZoomYBound * float32(Btoi(isStage))
-	// Hires breaks ydelta scrolling vel, so bgscl was commented from here.
-	yScrollPos := ((pos[1] - (zoomybound / lclscl)) / stgscl[1]) * bg.delta[1] // * bgscl
-	yScrollPos += ((zoomybound / lclscl) / stgscl[1]) * Pow(bg.zoomdelta[1], 1.4) / bgscl
 	y := bg.start[1] - yScrollPos + bg.bga.offset[1]
-	ys2 := bg.scaledelta[1] * (pos[1] - zoomybound) * bg.delta[1] * bgscl
-	ys := ((100-(pos[1]-zoomybound)*bg.yscaledelta)*bgscl/bg.yscalestart)*bg.scalestart[1] + ys2
+	ys2 := bg.scaledelta[1] * pos[1] * bg.delta[1] * bgscl
+	ys := ((100-(pos[1])*bg.yscaledelta)*bgscl/bg.yscalestart)*bg.scalestart[1] + ys2
 	xs := bg.scaledelta[0] * pos[0] * bg.delta[0] * bgscl
 	x *= bgscl
-	y = y*bgscl + ((float32(sys.gameHeight)-shakeY)/scly-240)/stgscl[1]
-	scly *= stgscl[1]
+	if isStage {
+		zoff := float32(sys.cam.zoffset) * lclscl
+		y = y*bgscl + ((zoff-shakeY)/scly-zoff)/lclscl/stgscl[1]
+		y -= sys.cam.aspectcorrection / (scly * lclscl * stgscl[1])
+		y -= sys.cam.zoomanchorcorrection / (scly * lclscl * stgscl[1])
+	} else {
+		y = y*bgscl + ((float32(sys.gameHeight)-shakeY)/lclscl/scly-240)/stgscl[1]
+	}
+
+	sclx *= lscl[0]
+	scly *= lclscl * stgscl[1]
 	rect := bg.startrect
 	var wscl [2]float32
 	for i := range wscl {
@@ -439,7 +445,7 @@ func (bg backGround) draw(pos [2]float32, scl, bgscl, lclscl float32,
 				bgscl * lscl[i]
 		}
 	}
-	startrect0 := (float32(rect[0]) - (pos[0]+bg.camstartx)*bg.windowdelta[0] + (float32(sys.gameWidth)/2/sclx - float32(bg.notmaskwindow)*(float32(sys.gameWidth)/2)*(1/lscl[0]))) * sys.widthScale * wscl[0]
+	startrect0 := (float32(rect[0]) - (pos[0])*bg.windowdelta[0] + (float32(sys.gameWidth)/2/sclx - float32(bg.notmaskwindow)*(float32(sys.gameWidth)/2)*(1/lscl[0]))) * sys.widthScale * wscl[0]
 	if !isStage && wscl[0] == 1 {
 		startrect0 += float32(sys.gameWidth-320) / 2 * sys.widthScale
 	}
@@ -699,56 +705,61 @@ type stagePlayer struct {
 	startx, starty, startz int32
 }
 type Stage struct {
-	def             string
-	bgmusic         string
-	name            string
-	displayname     string
-	author          string
-	nameLow         string
-	displaynameLow  string
-	authorLow       string
-	attachedchardef []string
-	sff             *Sff
-	at              AnimationTable
-	bg              []*backGround
-	bgc             []bgCtrl
-	bgct            bgcTimeLine
-	bga             bgAction
-	sdw             stageShadow
-	p               [2]stagePlayer
-	leftbound       float32
-	rightbound      float32
-	screenleft      int32
-	screenright     int32
-	zoffsetlink     int32
-	reflection      int32
-	hires           bool
-	resetbg         bool
-	debugbg         bool
-	bgclearcolor    [3]int32
-	localscl        float32
-	scale           [2]float32
-	bgmvolume       int32
-	bgmloopstart    int32
-	bgmloopend      int32
-	bgmratiolife    int32
-	bgmtriggerlife  int32
-	bgmtriggeralt   int32
-	mainstage       bool
-	stageCamera     stageCamera
-	stageTime       int32
-	constants       map[string]float32
-	p1p3dist        float32
-	mugenver        [2]uint16
-	reload          bool
-	stageprops      StageProps
-	model           *Model
+	def              string
+	bgmusic          string
+	name             string
+	displayname      string
+	author           string
+	nameLow          string
+	displaynameLow   string
+	authorLow        string
+	attachedchardef  []string
+	sff              *Sff
+	at               AnimationTable
+	bg               []*backGround
+	bgc              []bgCtrl
+	bgct             bgcTimeLine
+	bga              bgAction
+	sdw              stageShadow
+	p                [2]stagePlayer
+	leftbound        float32
+	rightbound       float32
+	screenleft       int32
+	screenright      int32
+	zoffsetlink      int32
+	reflection       int32
+	hires            bool
+	autoturn         bool
+	resetbg          bool
+	debugbg          bool
+	bgclearcolor     [3]int32
+	localscl         float32
+	scale            [2]float32
+	bgmvolume        int32
+	bgmloopstart     int32
+	bgmloopend       int32
+	bgmstartposition int32
+	bgmfreqmul       float32
+	bgmratiolife     int32
+	bgmtriggerlife   int32
+	bgmtriggeralt    int32
+	mainstage        bool
+	stageCamera      stageCamera
+	stageTime        int32
+	constants        map[string]float32
+	p1p3dist         float32
+	mugenver         [2]uint16
+	reload           bool
+	stageprops       StageProps
+	model            *Model
+	ikemenver        [3]uint16
 }
 
 func newStage(def string) *Stage {
 	s := &Stage{def: def, leftbound: -1000,
 		rightbound: 1000, screenleft: 15, screenright: 15,
-		zoffsetlink: -1, resetbg: true, localscl: 1, scale: [...]float32{float32(math.NaN()), float32(math.NaN())},
+		zoffsetlink: -1, autoturn: true, resetbg: true, localscl: 1,
+		scale:        [...]float32{float32(math.NaN()), float32(math.NaN())},
 		bgmratiolife: 30, stageCamera: *newStageCamera(),
 		constants: make(map[string]float32), p1p3dist: 25, bgmvolume: 100}
 	s.sdw.intensity = 128
@@ -806,8 +817,21 @@ func loadStage(def string, main bool) (*Stage, error) {
 				}
 			}
 		}
-		// If the MUGEN version is lower than 1.0, use camera pixel rounding (floor)
-		if s.mugenver[0] != 1 {
+		s.ikemenver = [3]uint16{}
+		if str, ok := sec[0]["ikemenversion"]; ok {
+			for k, v := range SplitAndTrim(str, ".") {
+				if k >= len(s.ikemenver) {
+					break
+				}
+				if v, err := strconv.ParseUint(v, 10, 16); err == nil {
+					s.ikemenver[k] = uint16(v)
+				} else {
+					break
+				}
+			}
+		}
+		// If the MUGEN version is lower than 1.0, default to camera pixel rounding (floor)
+		if s.ikemenver[0] == 0 && s.ikemenver[1] == 0 && s.mugenver[0] != 1 {
 			s.stageprops.roundpos = true
 		}
 		if sec[0].LoadFile("attachedchar", []string{def, "", sys.motifDir, "data/"}, func(filename string) error {
@@ -866,6 +890,7 @@ func loadStage(def string, main bool) (*Stage, error) {
 		sec[0].ReadI32("zoffset", &s.stageCamera.zoffset)
 		sec[0].ReadI32("zoffsetlink", &s.zoffsetlink)
 		sec[0].ReadBool("hires", &s.hires)
+		sec[0].ReadBool("autoturn", &s.autoturn)
 		sec[0].ReadBool("resetbg", &s.resetbg)
 		sec[0].readI32ForStage("localcoord", &s.stageCamera.localcoord[0],
 			&s.stageCamera.localcoord[1])
@@ -886,7 +911,7 @@ func loadStage(def string, main bool) (*Stage, error) {
 	s.stageCamera.localscl = s.localscl
 	if sec := defmap["camera"]; len(sec) > 0 {
 		sec[0].ReadI32("startx", &s.stageCamera.startx)
-		//sec[0].ReadI32("starty", &s.stageCamera.starty) //does nothing in mugen
+		sec[0].ReadI32("starty", &s.stageCamera.starty)
 		sec[0].ReadI32("boundleft", &s.stageCamera.boundleft)
 		sec[0].ReadI32("boundright", &s.stageCamera.boundright)
 		sec[0].ReadI32("boundhigh", &s.stageCamera.boundhigh)
@@ -897,13 +922,21 @@ func loadStage(def string, main bool) (*Stage, error) {
 		sec[0].ReadF32("tensionvel", &s.stageCamera.tensionvel)
 		sec[0].ReadI32("overdrawhigh", &s.stageCamera.overdrawhigh) //TODO: not implemented
 		sec[0].ReadI32("overdrawlow", &s.stageCamera.overdrawlow)
-		sec[0].ReadI32("cuthigh", &s.stageCamera.cuthigh) //TODO: not implemented
+		sec[0].ReadI32("cuthigh", &s.stageCamera.cuthigh)
 		sec[0].ReadI32("cutlow", &s.stageCamera.cutlow)
 		sec[0].ReadF32("startzoom", &s.stageCamera.startzoom)
 		sec[0].ReadF32("fov", &s.stageCamera.fov)
 		sec[0].ReadF32("yshift", &s.stageCamera.yshift)
 		sec[0].ReadF32("near", &s.stageCamera.near)
 		sec[0].ReadF32("far", &s.stageCamera.far)
+		sec[0].ReadBool("autocenter", &s.stageCamera.autocenter)
+		sec[0].ReadF32("zoomindelay", &s.stageCamera.zoomindelay)
+		sec[0].ReadF32("zoominspeed", &s.stageCamera.zoominspeed)
+		sec[0].ReadF32("zoomoutspeed", &s.stageCamera.zoomoutspeed)
+		sec[0].ReadF32("yscrollspeed", &s.stageCamera.yscrollspeed)
+		sec[0].ReadF32("boundhighzoomdelta", &s.stageCamera.boundhighzoomdelta)
+		sec[0].ReadF32("verticalfollowzoomdelta", &s.stageCamera.verticalfollowzoomdelta)
+		sec[0].ReadBool("lowestcap", &s.stageCamera.lowestcap)
 		if sys.cam.ZoomMax == 0 {
 			sec[0].ReadF32("zoomin", &s.stageCamera.zoomin)
 		} else {
@@ -923,11 +956,14 @@ func loadStage(def string, main bool) (*Stage, error) {
 			sec[0].ReadI32("tensionhigh", &s.stageCamera.tensionhigh)
 		}
 	}
+	s.bgmfreqmul = 1 // fallback value to allow music to play on legacy stages without a bgmfreqmul parameter
 	if sec := defmap["music"]; len(sec) > 0 {
 		s.bgmusic = sec[0]["bgmusic"]
 		sec[0].ReadI32("bgmvolume", &s.bgmvolume)
 		sec[0].ReadI32("bgmloopstart", &s.bgmloopstart)
 		sec[0].ReadI32("bgmloopend", &s.bgmloopend)
+		sec[0].ReadI32("bgmstartposition", &s.bgmstartposition)
+		sec[0].ReadF32("bgmfreqmul", &s.bgmfreqmul)
 		sec[0].ReadI32("bgmratio.life", &s.bgmratiolife)
 		sec[0].ReadI32("bgmtrigger.life", &s.bgmtriggerlife)
 		sec[0].ReadI32("bgmtrigger.alt", &s.bgmtriggeralt)
@@ -939,6 +975,11 @@ func loadStage(def string, main bool) (*Stage, error) {
 				return err
 			}
 			*s.sff = *sff
+			// SFF v2.01 was not available before Mugen 1.1, therefore we assume that's the minimum correct version for the stage
+			if s.sff.header.Ver0 == 2 && s.sff.header.Ver2 == 1 {
+				s.mugenver[0] = 1
+				s.mugenver[1] = 1
+			}
 			return nil
 		}); err != nil {
 			return nil, err
@@ -953,6 +994,11 @@ func loadStage(def string, main bool) (*Stage, error) {
 			s.model.pfx = newPalFX()
 			s.model.pfx.clear()
 			s.model.pfx.time = -1
+			// 3D models were not available before Ikemen 1.0, therefore we assume that's the minimum correct version for the stage
+			if s.ikemenver[0] == 0 && s.ikemenver[1] == 0 {
+				s.ikemenver[0] = 1
+				s.ikemenver[1] = 0
+			}
 			return nil
 		}); err != nil {
 			return nil, err
@@ -974,8 +1020,8 @@ func loadStage(def string, main bool) (*Stage, error) {
 				}
 			}
 		}
-		posMul := float32(math.Tan(float64(s.stageCamera.fov*math.Pi/180)/2)) * -s.model.offset[2] * s.localscl * sys.heightScale / (float32(sys.scrrect[3]) / 2)
-		s.stageCamera.zoffset = int32(float32(s.stageCamera.localcoord[1])/2 - s.model.offset[1]/posMul - s.stageCamera.yshift*float32(sys.scrrect[3]/2)/s.localscl/sys.heightScale)
+		posMul := float32(math.Tan(float64(s.stageCamera.fov*math.Pi/180)/2)) * -s.model.offset[2] / (float32(s.stageCamera.localcoord[1]) / 2)
+		s.stageCamera.zoffset = int32(float32(s.stageCamera.localcoord[1])/2 - s.model.offset[1]/posMul - s.stageCamera.yshift*float32(sys.scrrect[3]/2)/float32(sys.gameHeight)*float32(s.stageCamera.localcoord[1])/sys.heightScale)
 		if str, ok := sec[0]["scale"]; ok {
 			for k, v := range SplitAndTrim(str, ",") {
 				if k >= len(s.model.scale) {
@@ -996,9 +1042,11 @@ func loadStage(def string, main bool) (*Stage, error) {
 			s.sdw.intensity = Clamp(tmp, 0, 255)
 		}
 		var r, g, b int32
-		// mugen 1.1 removed support for color
-		if (s.mugenver[0] != 1 || s.mugenver[1] != 1) && (s.sff.header.Ver0 != 2 || s.sff.header.Ver2 != 1) && sec[0].readI32ForStage("color", &r, &g, &b) {
-			r, g, b = Clamp(r, 0, 255), Clamp(g, 0, 255), Clamp(b, 0, 255)
+		sec[0].readI32ForStage("color", &r, &g, &b)
+		r, g, b = Clamp(r, 0, 255), Clamp(g, 0, 255), Clamp(b, 0, 255)
+		// Disable color parameter specifically in Mugen 1.1 stages
+		if s.ikemenver[0] == 0 && s.ikemenver[1] == 0 && s.mugenver[0] == 1 && s.mugenver[1] == 1 {
+			r, g, b = 0, 0, 0
 		}
 		s.sdw.color = uint32(r<<16 | g<<8 | b)
 		sec[0].ReadF32("yscale", &s.sdw.yscale)
@@ -1020,7 +1068,7 @@ func loadStage(def string, main bool) (*Stage, error) {
 			bglink = s.bg[len(s.bg)-1]
 		}
 		s.bg = append(s.bg, readBackGround(bgsec, bglink,
-			s.sff, s.at, float32(s.stageCamera.startx), s.stageprops))
+			s.sff, s.at, s.stageprops))
 	}
 	bgcdef := *newBgCtrl()
 	i = 0
@@ -1079,36 +1127,9 @@ func loadStage(def string, main bool) (*Stage, error) {
 		if s.zoffsetlink >= 0 && zlink < 0 && b.id == s.zoffsetlink {
 			zlink = i
 			s.stageCamera.zoffset += int32(b.start[1] * s.scale[1])
-			s.stageCamera.boundhigh -= int32(b.start[1] * s.scale[1])
 		}
 	}
-	ratio1 := float32(s.stageCamera.localcoord[0]) / float32(s.stageCamera.localcoord[1])
-	ratio2 := float32(sys.gameWidth) / 240
-	if ratio1 > ratio2 {
-		s.stageCamera.drawOffsetY =
-			MinF(float32(s.stageCamera.localcoord[1])*s.localscl*0.5*
-				(ratio1/ratio2-1), float32(Max(0, s.stageCamera.overdrawlow)))
-	}
-	if !s.stageCamera.ytensionenable {
-		s.stageCamera.drawOffsetY += MinF(float32(s.stageCamera.boundlow), MaxF(0, float32(s.stageCamera.floortension)*s.stageCamera.verticalfollow)) * s.localscl
-	} else {
-		s.stageCamera.drawOffsetY += MinF(float32(s.stageCamera.boundlow),
-			MaxF(0, (-26+(240/(float32(sys.gameWidth)/float32(s.stageCamera.localcoord[0])))-float32(s.stageCamera.tensionhigh)))) * s.localscl
-	}
-	//TODO: test if it works reasonably close to mugen
-	if sys.gameWidth > s.stageCamera.localcoord[0]*3*320/(s.stageCamera.localcoord[1]*4) {
-		if s.stageCamera.cutlow == math.MinInt32 {
-			//if omitted, the engine attempts to guess a reasonable set of values
-			s.stageCamera.drawOffsetY -= float32(s.stageCamera.localcoord[1]-s.stageCamera.zoffset) / s.localscl //- float32(s.stageCamera.boundlow)*s.localscl
-		} else {
-			//number of pixels into the bottom of the screen that may be cut from drawing when the screen aspect is shorter than the stage aspect
-			if s.stageCamera.cutlow < s.stageCamera.boundlow || s.stageCamera.boundlow <= 0 {
-				s.stageCamera.drawOffsetY -= float32(s.stageCamera.cutlow) * s.localscl
-			} // else {
-			//	s.stageCamera.drawOffsetY -= float32(s.stageCamera.boundlow) * s.localscl
-			//}
-		}
-	}
+
 	s.mainstage = main
 	return s, nil
 }
@@ -1260,8 +1281,10 @@ func (s *Stage) runBgCtrl(bgc *bgCtrl) {
 		if bgc.v[0] == 0 {
 			bgc.v[1] = 0
 		}
-		a := float32(bgc.v[2]) / 360
-		st := int32((a - float32(int32(a))) * float32(bgc.v[1]))
+		// Unlike plain sin.x elements, in the SinX BGCtrl the last parameter is a time offset rather than a phase
+		// https://github.com/ikemen-engine/Ikemen-GO/issues/1790
+		ph := float32(bgc.v[2]) / float32(bgc.v[1])
+		st := int32((ph - float32(int32(ph))) * float32(bgc.v[1]))
 		if st < 0 {
 			st += Abs(bgc.v[1])
 		}
@@ -1384,9 +1407,6 @@ func (s *Stage) draw(top bool, x, y, scl float32) {
 	if s.hires {
 		bgscl = 0.5
 	}
-	if s.stageCamera.boundhigh > 0 {
-		y += float32(s.stageCamera.boundhigh)
-	}
 	yofs, pos := sys.envShake.getOffset(), [...]float32{x, y}
 	scl2 := s.localscl * scl
 	// This code makes the background scroll faster when surpassing boundhigh with the camera pushed down
@@ -1400,11 +1420,11 @@ func (s *Stage) draw(top bool, x, y, scl float32) {
 	// extraBoundH*scl
 	// pos[1] = float32(s.stageCamera.boundhigh) - extraBoundH/s.localscl
 	// }
-	if s.stageCamera.verticalfollow > 0 {
+	if yofs != 0 && s.stageCamera.verticalfollow > 0 {
 		if yofs < 0 {
 			tmp := (float32(s.stageCamera.boundhigh) - pos[1]) * scl2
 			if scl > 1 {
-				tmp += (sys.cam.screenZoff + float32(sys.gameHeight-240)) * (1/scl - 1)
+				tmp += (sys.cam.GroundLevel() + float32(sys.gameHeight-240)) * (1/scl - 1)
 			} else {
 				tmp += float32(sys.gameHeight) * (1/scl - 1)
 			}
@@ -1428,19 +1448,14 @@ func (s *Stage) draw(top bool, x, y, scl float32) {
 			pos[i] = float32(math.Ceil(float64(p - 0.5)))
 		}
 	}
-	yofs3 := (float32(s.stageCamera.drawOffsetY) +
-		float32(s.stageCamera.localcoord[1]-240)*s.localscl)
-	yofs4 := ((360*float32(s.stageCamera.localcoord[0]) +
-		160*float32(s.stageCamera.localcoord[1])) /
-		float32(s.stageCamera.localcoord[0])) / 480
-
 	if !top {
-		s.drawModel(pos, yofs, scl)
+		s.drawModel(pos, yofs, scl, 0)
+	} else {
+		s.drawModel(pos, yofs, scl, 1)
 	}
 	for _, b := range s.bg {
 		if b.visible && b.toplayer == top && b.anim.spr != nil {
-			b.draw(pos, scl, bgscl, s.localscl, s.scale,
-				yofs+yofs3*Pow(Pow(scl, b.zoomdelta[1]), yofs4)-s.stageCamera.drawOffsetY*(1-b.delta[1]*bgscl), true)
+			b.draw(pos, scl, bgscl, s.localscl, s.scale, yofs, true)
 		}
 	}
 }
@@ -1573,8 +1588,6 @@ type Model struct {
 	meshes              []*Mesh
 	textures            []*GLTFTexture
 	materials           []*Material
-	vertexBuffer        []byte
-	elementBuffer       []uint32
 	offset              [3]float32
 	rotation            [3]float32
 	scale               [3]float32
@@ -1582,6 +1595,8 @@ type Model struct {
 	animationTimeStamps map[uint32][]float32
 	animations          []*GLTFAnimation
 	skins               []*Skin
+	vertexBuffer        []byte
+	elementBuffer       []uint32
 }
 type Scene struct {
 	nodes []uint32
@@ -1658,6 +1673,8 @@ type Node struct {
 	worldTransform     mgl.Mat4
 	childrenIndex      []uint32
 	trans              Trans
+	zWrite             bool
+	zTest              bool
 	parentIndex        *int32
 	skin               *uint32
 	morphTargetWeights []float32
@@ -1853,6 +1870,8 @@ func loadglTFStage(filepath string) (*Model, error) {
 		material.doubleSided = m.DoubleSided
 		mdl.materials = append(mdl.materials, material)
 	}
+	var vertexBuffer []byte
+	var elementBuffer []uint32
 	mdl.meshes = make([]*Mesh, 0, len(doc.Meshes))
 	for _, m := range doc.Meshes {
 		var mesh = &Mesh{}
@@ -1860,15 +1879,15 @@ func loadglTFStage(filepath string) (*Model, error) {
 		mesh.morphTargetWeights = m.Weights
 		for _, p := range m.Primitives {
 			var primitive = &Primitive{}
-			primitive.vertexBufferOffset = uint32(len(mdl.vertexBuffer))
-			primitive.elementBufferOffset = uint32(4 * len(mdl.elementBuffer))
+			primitive.vertexBufferOffset = uint32(len(vertexBuffer))
+			primitive.elementBufferOffset = uint32(4 * len(elementBuffer))
 			var posBuffer [][3]float32
 			positions, err := modeler.ReadPosition(doc, doc.Accessors[p.Attributes[gltf.POSITION]], posBuffer)
 			if err != nil {
 				return nil, err
 			}
 			for _, pos := range positions {
-				mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, pos[:]...)...)
+				vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, pos[:]...)...)
 			}
 			primitive.numVertices = uint32(len(positions))
 			if idx, ok := p.Attributes[gltf.TEXCOORD_0]; ok {
@@ -1880,7 +1899,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 				if len(texCoords) > 0 {
 					primitive.useUV = true
 					for _, tex := range texCoords {
-						mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, tex[:]...)...)
+						vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, tex[:]...)...)
 					}
 				} else {
 					primitive.useUV = false
@@ -1894,7 +1913,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 				return nil, err
 			}
 			for _, p := range indices {
-				mdl.elementBuffer = append(mdl.elementBuffer, p)
+				elementBuffer = append(elementBuffer, p)
 			}
 			primitive.numIndices = uint32(len(indices))
 			if idx, ok := p.Attributes[gltf.COLOR_0]; ok {
@@ -1908,7 +1927,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 							return nil, err
 						}
 						for _, vec := range vecs.([][3]uint8) {
-							mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/255, float32(vec[1])/255, float32(vec[2])/255, 1)...)
+							vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/255, float32(vec[1])/255, float32(vec[2])/255, 1)...)
 						}
 					} else {
 						var vecBuffer [][4]uint8
@@ -1917,7 +1936,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 							return nil, err
 						}
 						for _, vec := range vecs.([][4]uint8) {
-							mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/255, float32(vec[1])/255, float32(vec[2])/255, float32(vec[3])/255)...)
+							vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/255, float32(vec[1])/255, float32(vec[2])/255, float32(vec[3])/255)...)
 						}
 					}
 				case gltf.ComponentUshort:
@@ -1928,7 +1947,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 							return nil, err
 						}
 						for _, vec := range vecs.([][3]uint16) {
-							mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/65535, float32(vec[1])/65535, float32(vec[2])/65535, 1)...)
+							vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/65535, float32(vec[1])/65535, float32(vec[2])/65535, 1)...)
 						}
 					} else {
 						var vecBuffer [][4]uint16
@@ -1937,7 +1956,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 							return nil, err
 						}
 						for _, vec := range vecs.([][4]uint16) {
-							mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/65535, float32(vec[1])/65535, float32(vec[2])/65535, float32(vec[3])/65535)...)
+							vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/65535, float32(vec[1])/65535, float32(vec[2])/65535, float32(vec[3])/65535)...)
 						}
 					}
 				case gltf.ComponentFloat:
@@ -1948,7 +1967,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 							return nil, err
 						}
 						for _, vec := range vecs.([][3]float32) {
-							mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, vec[0], vec[1], vec[2], 1)...)
+							vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, vec[0], vec[1], vec[2], 1)...)
 						}
 					} else {
 						var vecBuffer [][4]float32
@@ -1957,7 +1976,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 							return nil, err
 						}
 						for _, vec := range vecs.([][4]float32) {
-							mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, vec[:]...)...)
+							vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, vec[:]...)...)
 						}
 					}
 				}
@@ -1976,7 +1995,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 					for j, v := range joint {
 						f[j] = float32(v)
 					}
-					mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, f[:]...)...)
+					vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, f[:]...)...)
 				}
 				if idx, ok := p.Attributes[gltf.WEIGHTS_0]; ok {
 					var weightBuffer [][4]float32
@@ -1985,7 +2004,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 						return nil, err
 					}
 					for _, weight := range weights {
-						mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, weight[:]...)...)
+						vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, weight[:]...)...)
 					}
 				} else {
 					return nil, errors.New("Primitive attribute JOINTS_0 is specified but WEIGHTS_0 is not specified.")
@@ -2002,7 +2021,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 						for j, v := range joint {
 							f[j] = float32(v)
 						}
-						mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, f[:]...)...)
+						vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, f[:]...)...)
 					}
 					primitive.useJoint1 = false
 					if idx, ok := p.Attributes["WEIGHTS_1"]; primitive.useJoint1 && ok {
@@ -2012,7 +2031,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 							return nil, err
 						}
 						for _, weight := range weights {
-							mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, weight[:]...)...)
+							vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, weight[:]...)...)
 						}
 					} else if primitive.useJoint1 {
 						return nil, errors.New("Primitive attribute JOINTS_1 is specified but WEIGHTS_1 is not specified.")
@@ -2029,7 +2048,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 				for attr, accessor := range t {
 					switch attr {
 					case "POSITION":
-						o := uint32(len(mdl.vertexBuffer))
+						o := uint32(len(vertexBuffer))
 						target.positionOffset = &o
 						var posBuffer [][3]float32
 						positions, err := modeler.ReadPosition(doc, doc.Accessors[accessor], posBuffer)
@@ -2037,10 +2056,10 @@ func loadglTFStage(filepath string) (*Model, error) {
 							return nil, err
 						}
 						for _, pos := range positions {
-							mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, pos[0], pos[1], pos[2], 0)...)
+							vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, pos[0], pos[1], pos[2], 0)...)
 						}
 					case "TEXCOORD_0":
-						o := uint32(len(mdl.vertexBuffer))
+						o := uint32(len(vertexBuffer))
 						target.uvOffset = &o
 						var uvBuffer [][2]float32
 						texCoords, err := modeler.ReadTextureCoord(doc, doc.Accessors[accessor], uvBuffer)
@@ -2048,10 +2067,10 @@ func loadglTFStage(filepath string) (*Model, error) {
 							return nil, err
 						}
 						for _, uv := range texCoords {
-							mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, uv[0], uv[1], 0, 0)...)
+							vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, uv[0], uv[1], 0, 0)...)
 						}
 					case "COLOR_0":
-						o := uint32(len(mdl.vertexBuffer))
+						o := uint32(len(vertexBuffer))
 						target.colorOffset = &o
 						switch doc.Accessors[accessor].ComponentType {
 						case gltf.ComponentUbyte:
@@ -2062,7 +2081,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 									return nil, err
 								}
 								for _, vec := range vecs.([][3]uint8) {
-									mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/255, float32(vec[1])/255, float32(vec[2])/255, 1)...)
+									vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/255, float32(vec[1])/255, float32(vec[2])/255, 1)...)
 								}
 							} else {
 								var vecBuffer [][4]uint8
@@ -2071,7 +2090,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 									return nil, err
 								}
 								for _, vec := range vecs.([][4]uint8) {
-									mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/255, float32(vec[1])/255, float32(vec[2])/255, float32(vec[3])/255)...)
+									vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/255, float32(vec[1])/255, float32(vec[2])/255, float32(vec[3])/255)...)
 								}
 							}
 						case gltf.ComponentUshort:
@@ -2082,7 +2101,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 									return nil, err
 								}
 								for _, vec := range vecs.([][3]uint16) {
-									mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/65535, float32(vec[1])/65535, float32(vec[2])/65535, 1)...)
+									vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/65535, float32(vec[1])/65535, float32(vec[2])/65535, 1)...)
 								}
 							} else {
 								var vecBuffer [][4]uint16
@@ -2091,7 +2110,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 									return nil, err
 								}
 								for _, vec := range vecs.([][4]uint16) {
-									mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/65535, float32(vec[1])/65535, float32(vec[2])/65535, float32(vec[3])/65535)...)
+									vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/65535, float32(vec[1])/65535, float32(vec[2])/65535, float32(vec[3])/65535)...)
 								}
 							}
 						case gltf.ComponentFloat:
@@ -2102,7 +2121,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 									return nil, err
 								}
 								for _, vec := range vecs.([][3]float32) {
-									mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, vec[0], vec[1], vec[2], 1)...)
+									vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, vec[0], vec[1], vec[2], 1)...)
 								}
 							} else {
 								var vecBuffer [][4]float32
@@ -2111,7 +2130,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 									return nil, err
 								}
 								for _, vec := range vecs.([][4]float32) {
-									mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, vec[:]...)...)
+									vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, vec[:]...)...)
 								}
 							}
 						}
@@ -2128,6 +2147,9 @@ func loadglTFStage(filepath string) (*Model, error) {
 		}
 		mdl.meshes = append(mdl.meshes, mesh)
 	}
+	mdl.vertexBuffer = vertexBuffer
+	mdl.elementBuffer = elementBuffer
+
 	mdl.nodes = make([]*Node, 0, len(doc.Nodes))
 	for _, n := range doc.Nodes {
 		var node = &Node{}
@@ -2145,6 +2167,9 @@ func loadglTFStage(filepath string) (*Model, error) {
 				node.morphTargetWeights = mdl.meshes[*node.meshIndex].morphTargetWeights
 			}
 		}
+		node.trans = TransNone
+		node.zTest = true
+		node.zWrite = true
 		if n.Extras != nil {
 			v, ok := n.Extras.(map[string]interface{})
 			if ok {
@@ -2156,7 +2181,14 @@ func loadglTFStage(filepath string) (*Model, error) {
 				case "NONE":
 					node.trans = TransNone
 				}
+				if v["disableZTest"] != nil && v["disableZTest"] != "0" && v["disableZTest"] != "false" {
+					node.zTest = false
+				}
+				if v["disableZWrite"] != nil && v["disableZWrite"] != "0" && v["disableZWrite"] != "false" {
+					node.zWrite = false
+				}
 			}
+
 		}
 		node.transformChanged = true
 	}
@@ -2366,10 +2398,10 @@ func drawNode(mdl *Model, n *Node, proj, view mgl.Mat4, drawBlended bool) {
 			return
 		}
 		color := mdl.materials[*p.materialIndex].baseColorFactor
-		gfx.SetModelPipeline(blendEq, src, dst, true, mdl.materials[*p.materialIndex].doubleSided, p.useUV, p.useVertexColor, p.useJoint0, p.useJoint1, p.numVertices, p.vertexBufferOffset)
+		modelview := view.Mul4(n.worldTransform)
+		gfx.SetModelPipeline(blendEq, src, dst, n.zTest, n.zWrite, mdl.materials[*p.materialIndex].doubleSided, modelview.Det() < 0, p.useUV, p.useVertexColor, p.useJoint0, p.useJoint1, p.numVertices, p.vertexBufferOffset)
 
 		gfx.SetModelUniformMatrix("projection", proj[:])
-		modelview := view.Mul4(n.worldTransform)
 		gfx.SetModelUniformMatrix("modelview", modelview[:])
 		if index := mat.textureIndex; index != nil {
 			gfx.SetModelTexture("tex", mdl.textures[*index].tex)
@@ -2439,17 +2471,19 @@ func drawNode(mdl *Model, n *Node, proj, view mgl.Mat4, drawBlended bool) {
 
 	}
 }
-func (s *Stage) drawModel(pos [2]float32, yofs float32, scl float32) {
-	if s.model == nil || len(s.model.scenes) == 0 {
+func (s *Stage) drawModel(pos [2]float32, yofs float32, scl float32, sceneNumber int) {
+	if s.model == nil || len(s.model.scenes) <= sceneNumber {
 		return
 	}
 
 	drawFOV := s.stageCamera.fov * math.Pi / 180
 
-	var posMul float32 = float32(math.Tan(float64(drawFOV)/2)) * -s.model.offset[2] * s.localscl * sys.heightScale / (float32(sys.scrrect[3]) / 2)
-	var syo float32 = -(float32(sys.gameHeight) / 2) * (1 - scl) / s.localscl / scl
+	var posMul float32 = float32(math.Tan(float64(drawFOV)/2)) * -s.model.offset[2] / (float32(sys.scrrect[3]) / 2)
 
-	offset := []float32{(pos[0]*-posMul*(scl) + s.model.offset[0]) / scl, ((pos[1]+yofs/s.localscl/scl+syo)*posMul + s.model.offset[1]), s.model.offset[2] / scl}
+	var syo float32
+	aspectCorrection := (float32(sys.cam.zoffset)*float32(sys.gameHeight)/float32(sys.cam.localcoord[1]) - (float32(sys.cam.zoffset)*s.localscl - sys.cam.aspectcorrection))
+	syo = -(float32(s.stageCamera.zoffset) - float32(sys.cam.localcoord[1])/2) * (1 - scl) / scl * float32(sys.gameHeight) / float32(s.stageCamera.localcoord[1])
+	offset := []float32{(pos[0]*-posMul*s.localscl*sys.widthScale + s.model.offset[0]/scl), (((pos[1]*s.localscl+sys.cam.zoomanchorcorrection+aspectCorrection)/scl+yofs/scl+syo)*posMul*sys.heightScale + s.model.offset[1]), s.model.offset[2] / scl}
 	rotation := []float32{s.model.rotation[0], s.model.rotation[1], s.model.rotation[2]}
 	scale := []float32{s.model.scale[0], s.model.scale[1], s.model.scale[2]}
 	proj := mgl.Translate3D(0, sys.cam.yshift*scl, 0)
@@ -2460,9 +2494,7 @@ func (s *Stage) drawModel(pos [2]float32, yofs float32, scl float32) {
 	view = view.Mul4(mgl.HomogRotate3DY(rotation[1]))
 	view = view.Mul4(mgl.HomogRotate3DZ(rotation[2]))
 	view = view.Mul4(mgl.Scale3D(scale[0], scale[1], scale[2]))
-	scene := s.model.scenes[0]
-	gfx.SetByteVertexData(s.model.vertexBuffer)
-	gfx.SetIndexData(s.model.elementBuffer...)
+	scene := s.model.scenes[sceneNumber]
 
 	for _, index := range scene.nodes {
 		s.model.nodes[index].calculateWorldTransform(mgl.Ident4(), s.model.nodes)

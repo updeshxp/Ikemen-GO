@@ -40,17 +40,15 @@ void main(void) {
 		if (isRgba) {
 			if (mask == -1) {
 				c.a = 1.0;
-			}			
+			}
 			// RGBA sprites use premultiplied alpha for transparency	
 			neg_base *= c.a;
 			final_add *= c.a;
 			final_mul.rgb *= alpha;
 		} else {
-			// Colormap sprites use the old “buggy” Mugen way
-			if (int(255.25*c.r) == mask) {
-				final_mul = vec4(0.0);
-			} else {
-				c = texture2D(pal, vec2(c.r*0.9966, 0.5));
+			c = texture2D(pal, vec2(c.r*0.9966, 0.5));
+			if (mask == -1) {
+				c.a = 1.0;
 			}
 		}
 		if (hue != 0) {

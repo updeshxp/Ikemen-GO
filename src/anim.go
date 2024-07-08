@@ -398,18 +398,21 @@ func (a *Animation) drawFrame() *AnimFrame {
 }
 func (a *Animation) SetAnimElem(elem int32) {
 	a.current = Max(0, elem-1)
+	// If trying to set an element higher than the last one in the animation
 	if int(a.current) >= len(a.frames) {
-		if a.totaltime == -1 {
-			a.current = int32(len(a.frames)) - 1
-		} else {
-			a.current = a.loopstart +
-				(a.current-a.loopstart)%(int32(len(a.frames))-a.loopstart)
-		}
+		//if a.totaltime == -1 {
+		//	a.current = int32(len(a.frames)) - 1
+		//} else if int32(len(a.frames))-a.loopstart > 0 { // Prevent division by zero crash
+		//	a.current = a.loopstart +
+		//		(a.current-a.loopstart)%(int32(len(a.frames))-a.loopstart)
+		//}
+		// Mugen merely sets the element to 1
+		a.current = 0
 	}
 	a.drawidx, a.time, a.newframe = a.current, 0, true
 	a.UpdateSprite()
 	a.loopend = false
-	a.sumtime = 0 // AnimElemTime 内で使用
+	a.sumtime = 0 // AnimElemTime 内で使用 // "Used within AnimElemTime"
 	a.sumtime = -a.AnimElemTime(a.current + 1)
 }
 func (a *Animation) animSeek(elem int32) {
@@ -716,12 +719,13 @@ func (a *Animation) Draw(window *[4]int32, x, y, xcs, ycs, xs, xbs, ys,
 	if a.spr.coldepth <= 8 && paltex == nil {
 		paltex = a.spr.CachePalette(pal)
 	}
+	mask := int32(a.mask)
 	rp := RenderParams{
 		a.spr.Tex, paltex, a.spr.Size,
 		x * sys.widthScale,
 		y * sys.heightScale, a.tile, xs * sys.widthScale, xcs * xbs * h * sys.widthScale,
-		ys * sys.heightScale, 1, xcs * rxadd * sys.widthScale / sys.heightScale, rot,
-		0, trans, int32(a.mask), pfx, window, rcx, rcy, projectionMode, fLength * sys.heightScale,
+		ys * sys.heightScale, 1, xcs * rxadd * sys.widthScale / sys.heightScale, h, v, rot,
+		0, trans, mask, pfx, window, rcx, rcy, projectionMode, fLength * sys.heightScale,
 		xs * posLocalscl * (float32(a.frames[a.drawidx].X) + a.interpolate_offset_x) * a.start_scale[0] * (1 / a.scale_x) * sys.widthScale,
 		ys * posLocalscl * (float32(a.frames[a.drawidx].Y) + a.interpolate_offset_y) * a.start_scale[1] * (1 / a.scale_y) * sys.heightScale,
 	}
@@ -737,12 +741,13 @@ func (a *Animation) ShadowDraw(window *[4]int32, x, y, xscl, yscl, vscl, rxadd f
 	x += xscl * posLocalscl * h * (float32(a.frames[a.drawidx].X) + a.interpolate_offset_x) * (1 / a.scale_x)
 	y += yscl * posLocalscl * vscl * v * (float32(a.frames[a.drawidx].Y) + a.interpolate_offset_y) * (1 / a.scale_x)
 
+	mask := int32(a.mask)
 	rp := RenderParams{
 		a.spr.Tex, nil, a.spr.Size,
 		AbsF(xscl*h) * float32(a.spr.Offset[0]) * sys.widthScale,
 		AbsF(yscl*v) * float32(a.spr.Offset[1]) * sys.heightScale, a.tile,
 		xscl * h * sys.widthScale, xscl * h * sys.widthScale,
-		yscl * v * sys.heightScale, vscl, rxadd, rot, color | 0xff000000, 0, int32(a.mask), nil, window,
+		yscl * v * sys.heightScale, vscl, rxadd, h, v, rot, color | 0xff000000, 0, mask, nil, window,
 		(x + float32(sys.gameWidth)/2) * sys.widthScale, y * sys.heightScale,
 		projectionMode, fLength,
 		xscl * posLocalscl * h * (float32(a.frames[a.drawidx].X) + a.interpolate_offset_x) * (1 / a.scale_x),
@@ -750,9 +755,35 @@ func (a *Animation) ShadowDraw(window *[4]int32, x, y, xscl, yscl, vscl, rxadd f
 	}
 
 	// TODO: This is redundant now that rp.tint is used to colorise the shadow
-	if a.spr.coldepth <= 8 {
-		var pal [256]uint32
-		if color != 0 || alpha > 0 {
+	//if a.spr.coldepth <= 8 {
+	//	var pal [256]uint32
+	//	if color != 0 || alpha > 0 {
+	//		paltemp := a.spr.paltemp
+	//		if len(paltemp) == 0 {
+	//			if a.palettedata != nil {
+	//				paltemp = a.spr.GetPal(a.palettedata)
+	//			} else {
+	//				paltemp = a.spr.GetPal(&a.sff.palList)
+	//			}
+	//		}
+	//		for i := range pal {
+	//			// Skip transparent colors
+	//			if len(paltemp) > i && paltemp[i] != 0 {
+	//				pal[i] = color | 0xff000000
+	//			}
+	//		}
+	//	}
+	//	rp.paltex = PaletteToTexture(pal[:])
+	//}
+
+	if a.spr.coldepth <= 8 && (color != 0 || alpha > 0) {
+		if a.sff.header.Ver0 == 2 && a.sff.header.Ver2 == 1 {
+			trans := a.alpha()
+			pal, paltex := a.pal(pfx, trans == -2)
+			if paltex == nil {
+				rp.paltex = a.spr.CachePalette(pal)
+			}
+		} else {
 			paltemp := a.spr.paltemp
 			if len(paltemp) == 0 {
 				if a.palettedata != nil {
@@ -761,14 +792,8 @@ func (a *Animation) ShadowDraw(window *[4]int32, x, y, xscl, yscl, vscl, rxadd f
 					paltemp = a.spr.GetPal(&a.sff.palList)
 				}
 			}
-			for i := range pal {
-				// Skip transparent colors
-				if len(paltemp) > i && paltemp[i] != 0 {
-					pal[i] = color | 0xff000000
-				}
-			}
+			rp.paltex = PaletteToTexture(paltemp[:])
 		}
-		rp.paltex = PaletteToTexture(pal[:])
 	}
 
 	if color != 0 {
@@ -893,7 +918,7 @@ func (dl DrawList) draw(x, y, scl float32) {
 		} else {
 			p = [...]float32{sys.cam.Offset[0]/cs - (x - s.pos[0]),
 				(sys.cam.GroundLevel()+sys.cam.Offset[1]-sys.envShake.getOffset())/cs -
-					(y - s.pos[1])}
+					(y/cs - s.pos[1])}
 		}
 		if s.window[0] != 0 || s.window[1] != 0 || s.window[2] != 0 || s.window[3] != 0 {
 			w := s.window
@@ -988,20 +1013,20 @@ func (sl ShadowList) draw(x, y, scl float32) {
 			var window [4]int32
 
 			window[0] = int32((sys.cam.Offset[0] - ((x - s.pos[0] - xshearoff) * scl) + w[0]*scl + float32(sys.gameWidth)/2) * sys.widthScale)
-			window[1] = int32((sys.cam.GroundLevel() + sys.cam.Offset[1] - sys.envShake.getOffset() - (y+s.pos[1]*sys.stage.sdw.yscale-s.offsetY)*scl + w[1]*sys.stage.sdw.yscale*scl) * sys.heightScale)
+			window[1] = int32((sys.cam.GroundLevel() + sys.cam.Offset[1] - sys.envShake.getOffset() - y - (s.pos[1]*sys.stage.sdw.yscale-s.offsetY)*scl + w[1]*sys.stage.sdw.yscale*scl) * sys.heightScale)
 			window[2] = int32(scl * (w[2] - w[0]) * sys.widthScale)
 			window[3] = int32(scl * (w[3] - w[1]) * sys.heightScale * sys.stage.sdw.yscale)
 			s.anim.ShadowDraw(&window, sys.cam.Offset[0]-(x-s.pos[0]-xshearoff)*scl,
-				sys.cam.GroundLevel()+sys.cam.Offset[1]-sys.envShake.getOffset()-
-					(y+s.pos[1]*sys.stage.sdw.yscale-s.offsetY)*scl,
+				sys.cam.GroundLevel()+sys.cam.Offset[1]-sys.envShake.getOffset()-y-
+					(s.pos[1]*sys.stage.sdw.yscale-s.offsetY)*scl,
 				scl*s.scl[0], scl*-s.scl[1], sys.stage.sdw.yscale, xshear, s.rot,
-				&sys.bgPalFX, s.oldVer, uint32(color), intensity, s.facing, s.posLocalscl, s.projection, s.fLength)
+				s.fx, s.oldVer, uint32(color), intensity, s.facing, s.posLocalscl, s.projection, s.fLength)
 		} else {
 			s.anim.ShadowDraw(&sys.scrrect, sys.cam.Offset[0]-(x-s.pos[0]-xshearoff)*scl,
-				sys.cam.GroundLevel()+sys.cam.Offset[1]-sys.envShake.getOffset()-
-					(y+s.pos[1]*sys.stage.sdw.yscale-s.offsetY)*scl,
+				sys.cam.GroundLevel()+sys.cam.Offset[1]-sys.envShake.getOffset()-y-
+					(s.pos[1]*sys.stage.sdw.yscale-s.offsetY)*scl,
 				scl*s.scl[0], scl*-s.scl[1], sys.stage.sdw.yscale, xshear, s.rot,
-				&sys.bgPalFX, s.oldVer, uint32(color), intensity, s.facing, s.posLocalscl, s.projection, s.fLength)
+				s.fx, s.oldVer, uint32(color), intensity, s.facing, s.posLocalscl, s.projection, s.fLength)
 		}
 	}
 }
@@ -1035,18 +1060,18 @@ func (sl ShadowList) drawReflection(x, y, scl float32) {
 			}
 			var window [4]int32
 			window[0] = int32((scl*(sys.cam.Offset[0]/scl-(x-s.pos[0])+float32(w[0])) + float32(sys.gameWidth)/2) * sys.widthScale)
-			window[1] = int32(scl * ((sys.cam.GroundLevel()+sys.cam.Offset[1]-sys.envShake.getOffset())/scl - (y + s.pos[1] - s.offsetY) + float32(w[1])) * sys.heightScale)
+			window[1] = int32(scl * ((sys.cam.GroundLevel()+sys.cam.Offset[1]-sys.envShake.getOffset()-y)/scl - (s.pos[1] - s.offsetY) + float32(w[1])) * sys.heightScale)
 			window[2] = int32(scl * (w[2] - w[0]) * sys.widthScale)
 			window[3] = int32(scl * (w[3] - w[1]) * sys.heightScale)
 
 			s.anim.Draw(&window, sys.cam.Offset[0]/scl-(x-s.pos[0]),
-				(sys.cam.GroundLevel()+sys.cam.Offset[1]-sys.envShake.getOffset())/scl-
-					(y+s.pos[1]-s.offsetY), scl, scl, s.scl[0], s.scl[0], -s.scl[1], 0,
+				(sys.cam.GroundLevel()+sys.cam.Offset[1]-sys.envShake.getOffset())/scl-y-
+					(s.pos[1]-s.offsetY), scl, scl, s.scl[0], s.scl[0], -s.scl[1], 0,
 				s.rot, float32(sys.gameWidth)/2, s.fx, s.oldVer, s.facing, true, s.posLocalscl, s.projection, s.fLength)
 		} else {
 			s.anim.Draw(&sys.scrrect, sys.cam.Offset[0]/scl-(x-s.pos[0]),
-				(sys.cam.GroundLevel()+sys.cam.Offset[1]-sys.envShake.getOffset())/scl-
-					(y+s.pos[1]-s.offsetY), scl, scl, s.scl[0], s.scl[0], -s.scl[1], 0,
+				(sys.cam.GroundLevel()+sys.cam.Offset[1]-sys.envShake.getOffset())/scl-y-
+					(s.pos[1]-s.offsetY), scl, scl, s.scl[0], s.scl[0], -s.scl[1], 0,
 				s.rot, float32(sys.gameWidth)/2, s.fx, s.oldVer, s.facing, true, s.posLocalscl, s.projection, s.fLength)
 		}
 

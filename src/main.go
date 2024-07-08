@@ -4,7 +4,6 @@ import (
 	_ "embed" // Support for go:embed resources
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"regexp"
 	"runtime"
@@ -56,7 +55,7 @@ func main() {
 	processCommandLine()
 
 	// Try reading stats
-	if _, err := ioutil.ReadFile("save/stats.json"); err != nil {
+	if _, err := os.ReadFile("save/stats.json"); err != nil {
 		// If there was an error reading, write an empty json file
 		f, err := os.Create("save/stats.json")
 		chk(err)
@@ -113,7 +112,7 @@ func processCommandLine() {
 		sys.cmdFlags = make(map[string]string)
 		key := ""
 		player := 1
-		r1, _ := regexp.Compile("^-[h%?]")
+		r1, _ := regexp.Compile("^-[h%?]$")
 		r2, _ := regexp.Compile("^-")
 		// Loop through arguments
 		for _, a := range os.Args[1:] {
@@ -125,6 +124,8 @@ func processCommandLine() {
 -r <path>               Loads motif <path>. eg. -r motifdir or -r motifdir/system.def
 -lifebar <path>         Loads lifebar <path>. eg. -lifebar data/fight.def
 -storyboard <path>      Loads storyboard <path>. eg. -storyboard chars/kfm/intro.def
+-width <num>            Overrides game window width
+-height <num>           Overrides game window height
 
 Quick VS Options:
 -p<n> <playername>      Loads player n, eg. -p3 kfm
@@ -219,6 +220,7 @@ type configSettings struct {
 	InputButtonAssist          bool
 	InputSOCDResolution        int32
 	IP                         map[string]string
+	KeepAspect                 bool
 	LifeMul                    float32
 	ListenPort                 string
 	LoseSimul                  bool
@@ -236,6 +238,7 @@ type configSettings struct {
 	NumTag                     [2]int
 	NumTurns                   [2]int
 	PanningRange               float32
+	PauseMasterVolume          int
 	Players                    int
 	PngSpriteFilter            bool
 	PostProcessingShader       int32
@@ -296,7 +299,7 @@ func setupConfig() configSettings {
 		cfgPath = sys.cmdFlags["-config"]
 	}
 	// Load the config file, overwriting the defaults
-	if bytes, err := ioutil.ReadFile(cfgPath); err == nil {
+	if bytes, err := os.ReadFile(cfgPath); err == nil {
 		if len(bytes) >= 3 &&
 			bytes[0] == 0xef && bytes[1] == 0xbb && bytes[2] == 0xbf {
 			bytes = bytes[3:]
@@ -310,6 +313,7 @@ func setupConfig() configSettings {
 		tmp.AudioSampleRate = 44100
 	}
 	tmp.Framerate = Clamp(tmp.Framerate, 1, 840)
+	tmp.PauseMasterVolume = int(Clamp(int32(tmp.PauseMasterVolume), 0, 100))
 	tmp.MaxBgmVolume = int(Clamp(int32(tmp.MaxBgmVolume), 100, 250))
 	tmp.NumSimul[0] = int(Clamp(int32(tmp.NumSimul[0]), 2, int32(MaxSimul)))
 	tmp.NumSimul[1] = int(Clamp(int32(tmp.NumSimul[1]), int32(tmp.NumSimul[0]), int32(MaxSimul)))
@@ -320,7 +324,17 @@ func setupConfig() configSettings {
 	tmp.WavChannels = Clamp(tmp.WavChannels, 1, 256)
 	// Save config file, indent with two spaces to match calls to json.encode() in the Lua code
 	cfg, _ := json.MarshalIndent(tmp, "", "  ")
-	chk(ioutil.WriteFile(cfgPath, cfg, 0644))
+	chk(os.WriteFile(cfgPath, cfg, 0644))
+
+	// If given width/height arguments, override config's width/height here
+	if _, wok := sys.cmdFlags["-width"]; wok {
+		var w, _ = strconv.ParseInt(sys.cmdFlags["-width"], 10, 32)
+		tmp.GameWidth = int32(w)
+	}
+	if _, hok := sys.cmdFlags["-height"]; hok {
+		var h, _ = strconv.ParseInt(sys.cmdFlags["-height"], 10, 32)
+		tmp.GameHeight = int32(h)
+	}
 
 	// Set each config property to the system object
 	sys.afterImageMax = tmp.MaxAfterImage
@@ -358,6 +372,7 @@ func setupConfig() configSettings {
 	sys.gameWidth = tmp.GameWidth
 	sys.gameHeight = tmp.GameHeight
 	sys.gameSpeed = tmp.GameFramerate / float32(tmp.Framerate)
+	sys.keepAspect = tmp.KeepAspect
 	sys.helperMax = tmp.MaxHelper
 	sys.inputButtonAssist = tmp.InputButtonAssist
 	sys.inputSOCDresolution = Clamp(tmp.InputSOCDResolution, 0, 4)
@@ -368,6 +383,7 @@ func setupConfig() configSettings {
 	sys.loseTag = tmp.LoseTag
 	sys.masterVolume = tmp.VolumeMaster
 	sys.multisampleAntialiasing = tmp.MSAA
+	sys.pauseMasterVolume = tmp.PauseMasterVolume
 	sys.panningRange = tmp.PanningRange
 	sys.playerProjectileMax = tmp.MaxPlayerProjectile
 	sys.postProcessingShader = tmp.PostProcessingShader
