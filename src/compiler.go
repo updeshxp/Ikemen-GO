@@ -173,6 +173,7 @@ func newCompiler() *Compiler {
 		"modifysnd":            c.modifySnd,
 		"modifybgm":            c.modifyBgm,
 		"groundleveloffset":    c.groundLevelOffset,
+		"targetadd":            c.targetAdd,
 	}
 	return c
 }
@@ -2425,10 +2426,18 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 			opc = OC_const_stagevar_camera_zoomin
 		case "camera.zoomindelay":
 			opc = OC_const_stagevar_camera_zoomindelay
+		case "camera.zoominspeed":
+			opc = OC_const_stagevar_camera_zoominspeed
+		case "camera.zoomoutspeed":
+			opc = OC_const_stagevar_camera_zoomoutspeed
+		case "camera.yscrollspeed":
+			opc = OC_const_stagevar_camera_yscrollspeed
 		case "camera.ytension.enable":
 			opc = OC_const_stagevar_camera_ytension_enable
 		case "camera.autocenter":
 			opc = OC_const_stagevar_camera_autocenter
+		case "camera.lowestcap":
+			opc = OC_const_stagevar_camera_lowestcap
 		case "playerinfo.leftbound":
 			opc = OC_const_stagevar_playerinfo_leftbound
 		case "playerinfo.rightbound":
@@ -3196,6 +3205,7 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 		}
 		out.append(OC_ex_)
 		switch c.token {
+		// Mugen char flags
 		case "nostandguard":
 			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nostandguard))
 		case "nocrouchguard":
@@ -3214,6 +3224,30 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_noautoturn))
 		case "nowalk":
 			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nowalk))
+		case "noko":
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_noko))
+		// Mugen global flags
+		case "globalnoshadow":
+			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_globalnoshadow))
+		case "intro":
+			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_intro))
+		case "roundnotover":
+			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_roundnotover))
+		case "nobardisplay":
+			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_nobardisplay))
+		case "nobg":
+			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_nobg))
+		case "nofg":
+			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_nofg))
+		case "nokoslow":
+			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_nokoslow))
+		case "nokosnd":
+			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_nokosnd))
+		case "nomusic":
+			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_nomusic))
+		case "timerfreeze":
+			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_timerfreeze))
+		// Ikemen char flags
 		case "nobrake":
 			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nobrake))
 		case "nocrouch":
@@ -3260,8 +3294,6 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_noredlifedamage))
 		case "nomakedust":
 			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nomakedust))
-		case "noko":
-			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_noko))
 		case "noguardko":
 			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_noguardko))
 		case "nokovelocity":
@@ -3274,28 +3306,11 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_ignoreclsn2push))
 		case "immovable":
 			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_immovable))
-		case "intro":
-			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_intro))
-		case "roundnotover":
-			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_roundnotover))
-		case "nomusic":
-			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_nomusic))
-		case "nobardisplay":
-			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_nobardisplay))
-		case "nobg":
-			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_nobg))
-		case "nofg":
-			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_nofg))
-		case "globalnoshadow":
-			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_globalnoshadow))
-		case "timerfreeze":
-			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_timerfreeze))
-		case "nokosnd":
-			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_nokosnd))
-		case "nokoslow":
-			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_nokoslow))
+		case "cornerpriority":
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_cornerpriority))
+		// Ikemen global flags
 		case "globalnoko":
-			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_noko))
+			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_globalnoko))
 		case "roundnotskip":
 			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_roundnotskip))
 		case "roundfreeze":
@@ -3414,7 +3429,7 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 		out.append(OC_ex_, OC_ex_selfstatenoexist)
 	case "sprpriority":
 		out.append(OC_ex_, OC_ex_sprpriority)
-	case "stagebackedgedist", "stagebackedge": //Latter is deprecated
+	case "stagebackedgedist", "stagebackedge": // Latter is deprecated
 		out.append(OC_ex_, OC_ex_stagebackedgedist)
 	case "stageconst":
 		if err := c.checkOpeningBracket(in); err != nil {
@@ -3428,7 +3443,7 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 			return bvNone(), Error("Missing ')' before " + c.token)
 		}
 		*in = (*in)[1:]
-	case "stagefrontedgedist", "stagefrontedge": //Latter is deprecated
+	case "stagefrontedgedist", "stagefrontedge": // Latter is deprecated
 		out.append(OC_ex_, OC_ex_stagefrontedgedist)
 	case "stagetime":
 		out.append(OC_ex_, OC_ex_stagetime)
@@ -4369,10 +4384,10 @@ func (c *Compiler) paramTrans(is IniSection, sc *StateControllerBase,
 				// TODO: Based on my tests add1 doesn't need special alpha[1] handling
 				// Remove unused code if there won't be regression.
 				//if tt == TT_add1 {
-				//	exp = make([]BytecodeExp, 4) // 長さ4にする
+				//	exp = make([]BytecodeExp, 4)
 				//} else if tt == TT_add || tt == TT_alpha {
 				if tt == TT_add || tt == TT_alpha || tt == TT_add1 {
-					exp = make([]BytecodeExp, 3) // 長さ3にする
+					exp = make([]BytecodeExp, 3)
 				} else {
 					exp = make([]BytecodeExp, 2)
 				}
@@ -5667,16 +5682,16 @@ func (c *Compiler) stateBlock(line *string, bl *StateBlock, root bool,
 			continue
 		default:
 			scf, ok := c.scmap[c.token]
-			//helperはステコンとリダイレクトの両方で使う名称なのでチェックする
+			// Check the usage of the name 'helper' since it is used in both the State Controller and Redirect
 			if c.token == "helper" {
-				//peek ahead to see if this is a redirect
+				// peek ahead to see if this is a redirect
 				c.scan(line)
 				if len(c.token) > 0 {
 					if c.token[0] == ',' || c.token[0] == '(' {
 						ok = false
 					}
 				}
-				//reset things to "undo" the peek ahead
+				// reset things to "undo" the peek ahead
 				*line = (c.token + (*line))
 				c.token = "helper"
 			}

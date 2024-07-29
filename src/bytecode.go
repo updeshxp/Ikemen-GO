@@ -362,8 +362,12 @@ const (
 	OC_const_stagevar_camera_zoomout
 	OC_const_stagevar_camera_zoomin
 	OC_const_stagevar_camera_zoomindelay
+	OC_const_stagevar_camera_zoominspeed
+	OC_const_stagevar_camera_zoomoutspeed
+	OC_const_stagevar_camera_yscrollspeed
 	OC_const_stagevar_camera_ytension_enable
 	OC_const_stagevar_camera_autocenter
+	OC_const_stagevar_camera_lowestcap
 	OC_const_stagevar_playerinfo_leftbound
 	OC_const_stagevar_playerinfo_rightbound
 	OC_const_stagevar_scaling_topscale
@@ -1465,7 +1469,7 @@ func (be BytecodeExp) run(c *Char) BytecodeValue {
 			sys.bcStack.PushB(c.hitDefAttr(*(*int32)(unsafe.Pointer(&be[i]))))
 			i += 4
 		case OC_hitfall:
-			sys.bcStack.PushB(c.ghv.fallf)
+			sys.bcStack.PushB(c.ghv.fallflag)
 		case OC_hitover:
 			sys.bcStack.PushB(c.hitOver())
 		case OC_hitpausetime:
@@ -1941,6 +1945,8 @@ func (be BytecodeExp) run_const(c *Char, i *int, oc *Char) {
 			sys.stringPool[sys.workingState.playerNo].List[*(*int32)(
 				unsafe.Pointer(&be[*i]))])
 		*i += 4
+	case OC_const_stagevar_camera_autocenter:
+		sys.bcStack.PushB(sys.stage.stageCamera.autocenter)
 	case OC_const_stagevar_camera_boundleft:
 		sys.bcStack.PushI(sys.stage.stageCamera.boundleft)
 	case OC_const_stagevar_camera_boundright:
@@ -1949,22 +1955,32 @@ func (be BytecodeExp) run_const(c *Char, i *int, oc *Char) {
 		sys.bcStack.PushI(sys.stage.stageCamera.boundhigh)
 	case OC_const_stagevar_camera_boundlow:
 		sys.bcStack.PushI(sys.stage.stageCamera.boundlow)
-	case OC_const_stagevar_camera_verticalfollow:
-		sys.bcStack.PushF(sys.stage.stageCamera.verticalfollow)
 	case OC_const_stagevar_camera_floortension:
 		sys.bcStack.PushI(sys.stage.stageCamera.floortension)
+	case OC_const_stagevar_camera_lowestcap:
+		sys.bcStack.PushB(sys.stage.stageCamera.lowestcap)
+	case OC_const_stagevar_camera_tension:
+		sys.bcStack.PushI(sys.stage.stageCamera.tension)
 	case OC_const_stagevar_camera_tensionhigh:
 		sys.bcStack.PushI(sys.stage.stageCamera.tensionhigh)
 	case OC_const_stagevar_camera_tensionlow:
 		sys.bcStack.PushI(sys.stage.stageCamera.tensionlow)
-	case OC_const_stagevar_camera_tension:
-		sys.bcStack.PushI(sys.stage.stageCamera.tension)
 	case OC_const_stagevar_camera_startzoom:
 		sys.bcStack.PushF(sys.stage.stageCamera.startzoom)
+	case OC_const_stagevar_camera_verticalfollow:
+		sys.bcStack.PushF(sys.stage.stageCamera.verticalfollow)
 	case OC_const_stagevar_camera_zoomout:
 		sys.bcStack.PushF(sys.stage.stageCamera.zoomout)
 	case OC_const_stagevar_camera_zoomin:
 		sys.bcStack.PushF(sys.stage.stageCamera.zoomin)
+	case OC_const_stagevar_camera_zoomindelay:
+		sys.bcStack.PushF(sys.stage.stageCamera.zoomindelay)
+	case OC_const_stagevar_camera_zoominspeed:
+		sys.bcStack.PushF(sys.stage.stageCamera.zoominspeed)
+	case OC_const_stagevar_camera_zoomoutspeed:
+		sys.bcStack.PushF(sys.stage.stageCamera.zoomoutspeed)
+	case OC_const_stagevar_camera_yscrollspeed:
+		sys.bcStack.PushF(sys.stage.stageCamera.yscrollspeed)
 	case OC_const_stagevar_camera_ytension_enable:
 		sys.bcStack.PushB(sys.stage.stageCamera.ytensionenable)
 	case OC_const_stagevar_playerinfo_leftbound:
@@ -2128,7 +2144,7 @@ func (be BytecodeExp) run_ex(c *Char, i *int, oc *Char) {
 	case OC_ex_gethitvar_isbound:
 		sys.bcStack.PushB(c.isBound())
 	case OC_ex_gethitvar_fall:
-		sys.bcStack.PushB(c.ghv.fallf)
+		sys.bcStack.PushB(c.ghv.fallflag)
 	case OC_ex_gethitvar_fall_damage:
 		sys.bcStack.PushI(c.ghv.fall.damage)
 	case OC_ex_gethitvar_fall_xvel:
@@ -3149,7 +3165,7 @@ func (sc stateDef) Run(c *Char) {
 		case stateDef_anim:
 			c.changeAnimEx(exp[1].evalI(c), c.playerNo, string(*(*[]byte)(unsafe.Pointer(&exp[0]))), false)
 		case stateDef_ctrl:
-			//in mugen fatal blow ignores statedef ctrl
+			// in mugen fatal blow ignores statedef ctrl
 			if !c.ghv.fatal {
 				c.setCtrl(exp[0].evalB(c))
 			} else {
@@ -3167,23 +3183,60 @@ type hitBy StateControllerBase
 const (
 	hitBy_value byte = iota
 	hitBy_value2
+	hitBy_value3
+	hitBy_value4
+	hitBy_value5
+	hitBy_value6
+	hitBy_value7
+	hitBy_value8
 	hitBy_time
+	hitBy_playerno
+	hitBy_playerid
+	hitBy_stack
 	hitBy_redirectid
 )
 
 func (sc hitBy) Run(c *Char, _ []int32) bool {
 	time := int32(1)
+	pno := int(-1)
+	pid := int32(-1)
+	st := false
 	crun := c
+	set := func(idx int, exp []BytecodeExp, time int32, pno int, pid int32, st bool) {
+		crun.hitby[idx].not = false
+		crun.hitby[idx].time = time
+		crun.hitby[idx].flag = exp[0].evalI(c)
+		crun.hitby[idx].playerno = pno - 1
+		crun.hitby[idx].playerid = pid
+		crun.hitby[idx].stack = st
+	}
 	StateControllerBase(sc).run(c, func(id byte, exp []BytecodeExp) bool {
 		switch id {
 		case hitBy_time:
 			time = exp[0].evalI(c)
+		case hitBy_playerno:
+			pno = int(exp[0].evalI(c))
+		case hitBy_playerid:
+			pid = exp[0].evalI(c)
+		case hitBy_stack:
+			st = exp[0].evalB(c)
+		// This redundancy is because all values can be set simultaneously in Mugen
 		case hitBy_value:
-			crun.hitby[0].time = time
-			crun.hitby[0].flag = exp[0].evalI(c)
+			set(0, exp, time, pno, pid, st)
 		case hitBy_value2:
-			crun.hitby[1].time = time
-			crun.hitby[1].flag = exp[0].evalI(c)
+			set(1, exp, time, pno, pid, st)
+		case hitBy_value3:
+			set(2, exp, time, pno, pid, st)
+		case hitBy_value4:
+			set(3, exp, time, pno, pid, st)
+		case hitBy_value5:
+			set(4, exp, time, pno, pid, st)
+		case hitBy_value6:
+			set(5, exp, time, pno, pid, st)
+		case hitBy_value7:
+			set(6, exp, time, pno, pid, st)
+		case hitBy_value8:
+			set(7, exp, time, pno, pid, st)
 		case hitBy_redirectid:
 			if rid := sys.playerID(exp[0].evalI(c)); rid != nil {
 				crun = rid
@@ -3200,18 +3253,43 @@ type notHitBy hitBy
 
 func (sc notHitBy) Run(c *Char, _ []int32) bool {
 	time := int32(1)
+	pno := int(-1)
+	pid := int32(-1)
+	st := false
 	crun := c
+	set := func(idx int, exp []BytecodeExp, time int32, pno int, pid int32, st bool) {
+		crun.hitby[idx].not = true
+		crun.hitby[idx].time = time
+		crun.hitby[idx].flag = ^exp[0].evalI(c) // Opposite
+		crun.hitby[idx].playerno = pno - 1
+		crun.hitby[idx].playerid = pid
+	}
 	StateControllerBase(sc).run(c, func(id byte, exp []BytecodeExp) bool {
 		switch id {
 		case hitBy_time:
 			time = exp[0].evalI(c)
+		case hitBy_playerno:
+			pno = int(exp[0].evalI(c))
+		case hitBy_playerid:
+			pid = exp[0].evalI(c)
+		case hitBy_stack:
+			st = exp[0].evalB(c)
 		case hitBy_value:
-			crun.hitby[0].time = time
-			crun.hitby[0].flag = ^exp[0].evalI(c)
+			set(0, exp, time, pno, pid, st)
 		case hitBy_value2:
-			crun.hitby[1].time = time
-			crun.hitby[1].flag = ^exp[0].evalI(c)
-
+			set(1, exp, time, pno, pid, st)
+		case hitBy_value3:
+			set(2, exp, time, pno, pid, st)
+		case hitBy_value4:
+			set(3, exp, time, pno, pid, st)
+		case hitBy_value5:
+			set(4, exp, time, pno, pid, st)
+		case hitBy_value6:
+			set(5, exp, time, pno, pid, st)
+		case hitBy_value7:
+			set(6, exp, time, pno, pid, st)
+		case hitBy_value8:
+			set(7, exp, time, pno, pid, st)
 		case hitBy_redirectid:
 			if rid := sys.playerID(exp[0].evalI(c)); rid != nil {
 				crun = rid
@@ -3242,10 +3320,11 @@ func (sc assertSpecial) Run(c *Char, _ []int32) bool {
 		case assertSpecial_flag_g:
 			sys.setGSF(GlobalSpecialFlag(exp[0].evalI(c)))
 		case assertSpecial_noko:
-			if c.stWgi().ikemenver[0] != 0 || c.stWgi().ikemenver[1] != 0 {
-				crun.setASF(AssertSpecialFlag(ASF_noko))
+			// NoKO affects all characters in Mugen, so legacy chars do so as well
+			if c.stWgi().ikemenver[0] == 0 && c.stWgi().ikemenver[1] == 0 {
+				sys.setGSF(GlobalSpecialFlag(GSF_globalnoko))
 			} else {
-				sys.setGSF(GlobalSpecialFlag(GSF_noko))
+				crun.setASF(AssertSpecialFlag(ASF_noko))
 			}
 		case assertSpecial_redirectid:
 			if rid := sys.playerID(exp[0].evalI(c)); rid != nil {
@@ -3775,7 +3854,13 @@ func (sc helper) Run(c *Char, _ []int32) bool {
 		}
 		switch id {
 		case helper_helpertype:
-			h.player = exp[0].evalB(c)
+			ht := exp[0].evalI(c)
+			switch ht {
+			case 1:
+				h.player = true
+			case 2:
+				h.hprojectile = true
+			}
 		case helper_name:
 			h.name = string(*(*[]byte)(unsafe.Pointer(&exp[0])))
 		case helper_postype:
@@ -4192,7 +4277,7 @@ func (sc palFX) Run(c *Char, _ []int32) bool {
 				pf = newPalFX()
 			}
 			pf.clear2(true)
-			//Mugen 1.1 behavior if invertblend param is omitted (Only if char mugenversion = 1.1)
+			// Mugen 1.1 behavior if invertblend param is omitted (Only if char mugenversion = 1.1)
 			if c.stWgi().mugenver[0] == 1 && c.stWgi().mugenver[1] == 1 && c.stWgi().ikemenver[0] == 0 && c.stWgi().ikemenver[1] == 0 {
 				pf.invertblend = -2
 			}
@@ -4210,7 +4295,7 @@ func (sc allPalFX) Run(c *Char, _ []int32) bool {
 	sys.allPalFX.clear()
 	StateControllerBase(sc).run(c, func(id byte, exp []BytecodeExp) bool {
 		palFX(sc).runSub(c, &sys.allPalFX.PalFXDef, id, exp)
-		//Forcing 1.1 kind behavior
+		// Forcing 1.1 kind behavior
 		sys.allPalFX.invertblend = Clamp(sys.allPalFX.invertblend, 0, 1)
 		return true
 	})
@@ -4221,7 +4306,7 @@ type bgPalFX palFX
 
 func (sc bgPalFX) Run(c *Char, _ []int32) bool {
 	sys.bgPalFX.clear()
-	//Forcing 1.1 behavior
+	// Forcing 1.1 behavior
 	sys.bgPalFX.invertblend = -2
 	StateControllerBase(sc).run(c, func(id byte, exp []BytecodeExp) bool {
 		palFX(sc).runSub(c, &sys.bgPalFX.PalFXDef, id, exp)
@@ -4715,7 +4800,7 @@ func (sc modifyExplod) Run(c *Char, _ []int32) bool {
 				t := exp[0].evalI(c)
 				eachExpl(func(e *Explod) {
 					e.bindtime = t
-					//Bindtime fix(update bindtime according to current explod time)
+					// Bindtime fix (update bindtime according to current explod time)
 					if (crun.stWgi().ikemenver[0] > 0 || crun.stWgi().ikemenver[1] > 0) && t > 0 {
 						e.bindtime = e.time + t
 					}
@@ -4726,7 +4811,7 @@ func (sc modifyExplod) Run(c *Char, _ []int32) bool {
 				t := exp[0].evalI(c)
 				eachExpl(func(e *Explod) {
 					e.removetime = t
-					//Removetime fix(update removetime according to current explod time)
+					// Removetime fix (update removetime according to current explod time)
 					if (crun.stWgi().ikemenver[0] > 0 || crun.stWgi().ikemenver[1] > 0) && t > 0 {
 						e.removetime = e.time + t
 					}
@@ -4741,7 +4826,7 @@ func (sc modifyExplod) Run(c *Char, _ []int32) bool {
 				t := exp[0].evalI(c)
 				eachExpl(func(e *Explod) {
 					e.supermovetime = t
-					//Supermovetime fix(update supermovetime according to current explod time)
+					// Supermovetime fix (update supermovetime according to current explod time)
 					if (crun.stWgi().ikemenver[0] > 0 || crun.stWgi().ikemenver[1] > 0) && t > 0 {
 						e.supermovetime = e.time + t
 					}
@@ -4750,7 +4835,7 @@ func (sc modifyExplod) Run(c *Char, _ []int32) bool {
 				t := exp[0].evalI(c)
 				eachExpl(func(e *Explod) {
 					e.pausemovetime = t
-					//Pausemovetime fix(update pausemovetime according to current explod time)
+					// Pausemovetime fix (update pausemovetime according to current explod time)
 					if (crun.stWgi().ikemenver[0] > 0 || crun.stWgi().ikemenver[1] > 0) && t > 0 {
 						e.pausemovetime = e.time + t
 					}
@@ -5077,7 +5162,7 @@ func (sc afterImage) Run(c *Char, _ []int32) bool {
 		}
 		if !doOnce {
 			crun.aimg.clear()
-			//Mugen 1.1 behavior if invertblend param is omitted(Only if char mugenversion = 1.1)
+			// Mugen 1.1 behavior if invertblend param is omitted (Only if char mugenversion = 1.1)
 			if c.stWgi().mugenver[0] == 1 && c.stWgi().mugenver[1] == 1 && c.stWgi().ikemenver[0] == 0 && c.stWgi().ikemenver[1] == 0 {
 				crun.aimg.palfx[0].invertblend = -2
 			}
@@ -5221,6 +5306,8 @@ const (
 	hitDef_guardpoints
 	hitDef_redlife
 	hitDef_score
+	hitDef_p2clsncheck
+	hitDef_p2clsnrequire
 	hitDef_last = iota + afterImage_last + 1 - 1
 	hitDef_redirectid
 )
@@ -5497,6 +5584,20 @@ func (sc hitDef) runSub(c *Char, hd *HitDef, id byte, exp []BytecodeExp) bool {
 		if len(exp) > 1 {
 			hd.score[1] = exp[1].evalF(c)
 		}
+	case hitDef_p2clsncheck:
+		v := exp[0].evalI(c)
+		if v == 0 || v == 1 || v == 2 || v == 3 {
+			hd.p2clsncheck = v
+		} else {
+			hd.p2clsncheck = -1
+		}
+	case hitDef_p2clsnrequire:
+		v := exp[0].evalI(c)
+		if v == 1 || v == 2 || v == 3 {
+			hd.p2clsnrequire = v
+		} else {
+			hd.p2clsnrequire = 0
+		}
 	default:
 		if !palFX(sc).runSub(c, &hd.palfx, id, exp) {
 			return false
@@ -5524,16 +5625,15 @@ func (sc hitDef) Run(c *Char, _ []int32) bool {
 				return false
 			}
 		}
-		//Mugen 1.1 behavior if invertblend param is omitted(Only if char mugenversion = 1.1)
+		// Mugen 1.1 behavior if invertblend param is omitted (Only if char mugenversion = 1.1)
 		if c.stWgi().mugenver[0] == 1 && c.stWgi().mugenver[1] == 1 && c.stWgi().ikemenver[0] == 0 && c.stWgi().ikemenver[1] == 0 {
 			crun.hitdef.palfx.invertblend = -2
 		}
 		sc.runSub(c, &crun.hitdef, id, exp)
 		return true
 	})
-	//winmugenでHitdefのattrが投げ属性で自分側pausetimeが1以上の時、毎フレーム実行されなくなる
-	//"In Winmugen, when the attr of Hitdef is set to 'Throw' and the pausetime
-	// on the attacker's side is greater than 1, it no longer executes every frame."
+	// In Winmugen, when the attr of Hitdef is set to 'Throw' and the pausetime
+	// on the attacker's side is greater than 1, it no longer executes every frame.
 	if crun.hitdef.attr&int32(AT_AT) != 0 && crun.moveContact() == 1 &&
 		c.gi().mugenver[0] != 1 && crun.hitdef.pausetime > 0 {
 		crun.hitdef.attr = 0
@@ -7936,7 +8036,7 @@ func (sc forceFeedback) Run(c *Char, _ []int32) bool {
 		}
 		return true
 	})*/
-	//TODO: not implemented
+	// TODO: not implemented
 	return false
 }
 
@@ -8302,7 +8402,7 @@ func getHitScaleTarget(char *Char, target int32, force bool, reset bool) [3]*Hit
 	// Get our targets.
 	if target <= -1 {
 		return char.defaultHitScale
-	} else { //Check if target exists.
+	} else { // Check if target exists.
 		if force {
 			if _, ok := char.activeHitScale[target]; !ok || reset {
 				char.activeHitScale[target] = newHitScaleArray()
@@ -9564,8 +9664,12 @@ const (
 	modifyStageVar_camera_zoomout
 	modifyStageVar_camera_zoomin
 	modifyStageVar_camera_zoomindelay
+	modifyStageVar_camera_zoominspeed
+	modifyStageVar_camera_zoomoutspeed
+	modifyStageVar_camera_yscrollspeed
 	modifyStageVar_camera_ytension_enable
 	modifyStageVar_camera_autocenter
+	modifyStageVar_camera_lowestcap
 	modifyStageVar_playerinfo_leftbound
 	modifyStageVar_playerinfo_rightbound
 	modifyStageVar_scaling_topscale
@@ -9603,6 +9707,8 @@ func (sc modifyStageVar) Run(c *Char, _ []int32) bool {
 			s.stageCamera.verticalfollow = exp[0].evalF(c)
 		case modifyStageVar_camera_floortension:
 			s.stageCamera.floortension = exp[0].evalI(c)
+		case modifyStageVar_camera_lowestcap:
+			s.stageCamera.lowestcap = exp[0].evalB(c)
 		case modifyStageVar_camera_tensionhigh:
 			s.stageCamera.tensionhigh = exp[0].evalI(c)
 		case modifyStageVar_camera_tensionlow:
@@ -9623,14 +9729,20 @@ func (sc modifyStageVar) Run(c *Char, _ []int32) bool {
 			s.stageCamera.zoomin = exp[0].evalF(c)
 		case modifyStageVar_camera_zoomindelay:
 			s.stageCamera.zoomindelay = exp[0].evalF(c)
+		case modifyStageVar_camera_zoominspeed:
+			s.stageCamera.zoominspeed = exp[0].evalF(c)
+		case modifyStageVar_camera_zoomoutspeed:
+			s.stageCamera.zoomoutspeed = exp[0].evalF(c)
 		case modifyStageVar_camera_ytension_enable:
 			s.stageCamera.ytensionenable = exp[0].evalB(c)
+		case modifyStageVar_camera_yscrollspeed:
+			s.stageCamera.yscrollspeed = exp[0].evalF(c)
 		case modifyStageVar_playerinfo_leftbound:
 			s.leftbound = exp[0].evalF(c)
 		case modifyStageVar_playerinfo_rightbound:
 			s.rightbound = exp[0].evalF(c)
 		case modifyStageVar_scaling_topscale:
-			if s.mugenver[0] != 1 { //mugen 1.0+ removed support for topscale
+			if s.mugenver[0] != 1 { // mugen 1.0+ removed support for topscale
 				s.stageCamera.ztopscale = exp[0].evalF(c)
 			}
 		case modifyStageVar_bound_screenleft:
@@ -9666,7 +9778,7 @@ func (sc modifyStageVar) Run(c *Char, _ []int32) bool {
 			s.reflection = Clamp(exp[0].evalI(c), 0, 255)
 		case modifyStageVar_redirectid:
 			if rid := sys.playerID(exp[0].evalI(c)); rid != nil {
-				//crun = rid
+				//crun = rid - RedirectID is useless when modifying a stage
 			} else {
 				return false
 			}
@@ -9675,7 +9787,7 @@ func (sc modifyStageVar) Run(c *Char, _ []int32) bool {
 	})
 	sys.stage.reload = true // Stage will have to be reloaded if it's re-selected
 	sys.cam.stageCamera = s.stageCamera
-	sys.cam.Reset()
+	sys.cam.Reset() // TODO: Resetting the camera makes the zoom jitter
 	return false
 }
 
@@ -9862,7 +9974,7 @@ func (sc getHitVarSet) Run(c *Char, _ []int32) bool {
 		case getHitVarSet_ctrltime:
 			crun.ghv.ctrltime = exp[0].evalI(c)
 		case getHitVarSet_fall:
-			crun.ghv.fallf = exp[0].evalB(c)
+			crun.ghv.fallflag = exp[0].evalB(c)
 		case getHitVarSet_fall_damage:
 			crun.ghv.fall.damage = exp[0].evalI(c)
 		case getHitVarSet_fall_envshake_ampl:
@@ -9942,6 +10054,61 @@ func (sc groundLevelOffset) Run(c *Char, _ []int32) bool {
 				lclscround = c.localscl / crun.localscl
 			} else {
 				return false
+			}
+		}
+		return true
+	})
+	return false
+}
+
+type targetAdd StateControllerBase
+
+const (
+	targetAdd_playerid byte = iota
+	targetAdd_redirectid
+)
+
+func (sc targetAdd) Run(c *Char, _ []int32) bool {
+	crun := c
+	var pid int32
+	StateControllerBase(sc).run(c, func(id byte, exp []BytecodeExp) bool {
+		switch id {
+		case targetAdd_playerid:
+			pid = exp[0].evalI(c)
+		case targetAdd_redirectid:
+			if rid := sys.playerID(exp[0].evalI(c)); rid != nil {
+				crun = rid
+			} else {
+				return false
+			}
+		}
+		// Check if ID exists
+		if pid > 0 {
+			done := false
+			for i := range sys.chars {
+				for j := range sys.chars[i] {
+					if sys.chars[i][j].id == pid {
+						// Add target to char's "target" list
+						// This function already prevents duplicating targets
+						crun.addTarget(pid)
+						// Add char to target's "hit by" list
+						// Keep juggle points if target already exists
+						jug := crun.gi().data.airjuggle
+						for _, v := range sys.chars[i][j].ghv.hitBy {
+							if v[0] == crun.id {
+								jug = v[1]
+							}
+						}
+						// Remove then readd char to the list with the new juggle points
+						sys.chars[i][j].ghv.dropId(crun.id)
+						sys.chars[i][j].ghv.hitBy = append(sys.chars[i][j].ghv.hitBy, [...]int32{crun.id, jug})
+						done = true
+						break
+					}
+				}
+				if done {
+					break
+				}
 			}
 		}
 		return true
